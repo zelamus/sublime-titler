@@ -111,15 +111,6 @@ def _ensure_cuda_dlls_on_path() -> None:
         os.environ["PATH"] = os.pathsep.join(dll_dirs + [os.environ.get("PATH", "")])
 
 
-def _whisper_model_cached(model_name: str) -> bool:
-    """True if the whisper model snapshot (model.bin) is already in the HF cache."""
-    import glob
-    pattern = os.path.expanduser(
-        f"~/.cache/huggingface/hub/models--Systran--faster-whisper-{model_name}/snapshots/*/model.bin"
-    )
-    return bool(glob.glob(pattern))
-
-
 def _segments_from_audio(path: str, chunk: Optional[int], model_name: str = "medium") -> List[SubtitleSegment]:
     """Transcribe an audio file with faster-whisper for word-level timings.
 
@@ -138,10 +129,9 @@ def _segments_from_audio(path: str, chunk: Optional[int], model_name: str = "med
     _ensure_cuda_dlls_on_path()
     device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
     compute_type = "float16" if device == "cuda" else "int8"
-    if not _whisper_model_cached(model_name):
-        print(f"  model '{model_name}' not cached — downloading from Hugging Face")
-        print("  (if the download stalls, use a mirror: set HF_ENDPOINT, e.g. set HF_ENDPOINT=https://hf-mirror.com)")
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    from .download import ensure_whisper_model
+    model_dir, _ = ensure_whisper_model(model_name)
+    model = WhisperModel(model_dir, device=device, compute_type=compute_type)
     print(f"  model ready  [device: {device} | compute_type: {compute_type}]")
 
     segments_gen, info = model.transcribe(path, beam_size=5, word_timestamps=True)

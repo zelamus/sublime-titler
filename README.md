@@ -86,7 +86,11 @@ transcription works with zero extra configuration. You'll see it in the output:
 ```
 
 On the first run, whisper downloads the model (default `medium`, ~1.5 GB) from
-Hugging Face. If that download stalls (some networks block it), use a mirror:
+Hugging Face using **Xet**, their high-performance multi-connection transfer
+(usually 5–20× faster than the default single-connection download), with a live
+progress bar. If your network can't reach `huggingface.co` directly, a mirror
+works too — and the tool automatically falls back to `huggingface.co` if the
+configured mirror is unreachable:
 
 ```bash
 set HF_ENDPOINT=https://hf-mirror.com    # Windows
