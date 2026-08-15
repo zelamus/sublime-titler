@@ -137,6 +137,9 @@ def pick_video_codec(ffmpeg: str) -> Tuple[List[str], str]:
     return ["-c:v", "libx264", "-preset", "medium", "-crf", "20"], "libx264"
 
 
+LIBX264_ARGS = ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]
+
+
 def burn_subtitles(
     ffmpeg: str,
     input_video: str,
@@ -159,18 +162,25 @@ def burn_subtitles(
         filter_subs += f":fontsdir={_escape_filter_path(font_dir)}"
 
     # Pick the encoder if the caller did not.
-    if codec_args is None:
+    auto_picked = codec_args is None
+    if auto_picked:
         codec_args, _ = pick_video_codec(ffmpeg)
 
-    cmd: List[str] = [ffmpeg, "-y", "-i", input_video, "-vf", filter_subs]
-    cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
-    cmd += codec_args
-    cmd += ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
-    if extra_args:
-        cmd += extra_args
-    cmd += [output_path]
+    def _cmd(encoder: List[str]) -> List[str]:
+        cmd: List[str] = [ffmpeg, "-y", "-i", input_video, "-vf", filter_subs]
+        cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
+        cmd += encoder
+        cmd += ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
+        if extra_args:
+            cmd += extra_args
+        cmd += [output_path]
+        return cmd
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(_cmd(codec_args), capture_output=True, text=True)
+    if result.returncode != 0 and auto_picked and codec_args != LIBX264_ARGS:
+        codec_args = LIBX264_ARGS
+        print("  av1_nvenc unavailable on this ffmpeg build — retrying with libx264")
+        result = subprocess.run(_cmd(codec_args), capture_output=True, text=True)
     if result.returncode != 0:
         tail = "\n".join(
             line for line in (result.stderr or "").splitlines()
