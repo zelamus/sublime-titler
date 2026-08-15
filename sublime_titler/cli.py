@@ -212,11 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
     style.add_argument("--back-color", default=None, help="Box/back colour #RRGGBB (default: semi-transparent black)")
     style.add_argument("--outline", type=int, default=0, help="Outline width (0 = auto-scale)")
     style.add_argument("--shadow", type=int, default=0, help="Shadow depth (0 = auto-scale)")
-    style.add_argument("--position", default="middle", choices=[
+    style.add_argument("--position", default="bottom", choices=[
         "bottom", "bottom-left", "bottom-right",
         "middle", "middle-left", "middle-right",
         "top", "top-left", "top-right",
-    ], help="Subtitle position on screen (default 'middle' matches the Reddit-story look)")
+    ], help="Subtitle position on screen (default 'bottom')")
     style.add_argument("--margin-v", type=int, default=10, help="Vertical margin in ASS units")
     style.add_argument("--no-bold", action="store_true", help="Use the regular (non-bold) font weight")
     style.add_argument("--no-pop", action="store_true", help="Disable the scale pop-in animation")

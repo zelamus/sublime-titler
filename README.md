@@ -30,7 +30,7 @@ viral story-time videos, now a reusable CLI for anything you want to caption.
   `sublime-titler video.mp4` just works.
 - **Reddit-story defaults** — the styling matches the viral story-video look
   out of the box: Nunito SemiBold at 90 px (auto-scaled), white on black
-  outline, center position, karaoke highlight, pop-in animation.
+  outline, bottom position, karaoke highlight, pop-in animation.
 - **Adaptive line chunking** — short words pair up, long words get a line to
   themselves, so every subtitle stays short, punchy, and readable.
 - **Pop-in animation** — every line pops onto the screen with a snappy scale-in.
@@ -157,7 +157,7 @@ sublime-titler video.mp4 --text script.txt \
 | `--outline-color` | `#000000` | Outline color |
 | `--back-color` | translucent black | Box/back color |
 | `--outline` / `--shadow` | auto | Outline width / shadow depth |
-| `--position` | `middle` | `bottom`, `middle`, `top`, and corner variants (middle = Reddit-story look) |
+| `--position` | `bottom` | `bottom`, `middle`, `top`, and corner variants |
 | `--margin-v` | `10` | Vertical margin |
 | `--no-bold` / `--no-pop` / `--no-karaoke` | — | Disable bold, pop animation, highlighting |
 | `--chunk` | `auto` | Words per line: `auto` (adaptive 1–2), `0` (keep as-is), or fixed `N` |
@@ -199,7 +199,7 @@ The subtitle engine was extracted from a Reddit-story video generator and
 generalized: the adaptive 1–2 word chunking, the word-flash highlight
 (`\t`-animated inline overrides), the pop-in scale, and the title fade-in are
 all preserved verbatim, and the default styling matches the original config
-(Nunito 90 px, center position, 9/3 outline/shadow). What's new:
+(Nunito 90 px, bottom position, 9/3 outline/shadow). What's new:
 
 - **Any resolution** — `PlayResX/PlayResY` come from the input video, and font
   size / outline / shadow scale with it.

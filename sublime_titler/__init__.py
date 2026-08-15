@@ -1,6 +1,6 @@
 """sublime-titler — burn gorgeous karaoke-style subtitles into any video."""
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 from .cli import main  # noqa: F401
 from .core import SubtitleSegment  # noqa: F401
