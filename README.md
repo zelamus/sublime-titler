@@ -68,6 +68,31 @@ dependency:
 pip install .[whisper]   # or: pip install faster-whisper
 ```
 
+### 🚀 GPU acceleration
+
+If you have an NVIDIA GPU, transcription runs on it automatically (float16):
+
+```bash
+pip install .[gpu]   # faster-whisper + CUDA runtime libraries (cublas/cudnn)
+```
+
+No torch needed. The tool detects CUDA through ctranslate2 and, on Windows,
+adds the NVIDIA pip-package DLL directories to `PATH` itself — so GPU
+transcription works with zero extra configuration. You'll see it in the output:
+
+```
+  model ready  [device: cuda | compute_type: float16]
+  transcribing:   5.4s / 12.0s (44.8%)
+```
+
+On the first run, whisper downloads the model (default `medium`, ~1.5 GB) from
+Hugging Face. If that download stalls (some networks block it), use a mirror:
+
+```bash
+set HF_ENDPOINT=https://hf-mirror.com    # Windows
+export HF_ENDPOINT=https://hf-mirror.com # macOS/Linux
+```
+
 The tool bundles **Nunito SemiBold** (SIL OFL 1.1) — the font used for the
 viral story-video look — so it works out of the box. Use `--font` for any
 other `.ttf`/`.otf`.

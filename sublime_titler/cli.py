@@ -83,8 +83,48 @@ def _segments_from_text(path: str, duration: float, chunk: Optional[int]) -> Lis
     return chunk_segments(segments, max_words=chunk)
 
 
+def _ensure_cuda_dlls_on_path() -> None:
+    """Add NVIDIA pip-package DLL dirs (cublas/cudnn) to PATH on Windows.
+
+    ctranslate2 needs the CUDA runtime DLLs at load time.  When installed via
+    ``pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`` they live under
+    ``site-packages/nvidia/*/bin``; without this bootstrap, transcription on
+    GPU fails with "Library cublas64_12.dll is not found".
+    """
+    if os.name != "nt":
+        return
+    try:
+        import site
+        bases = [site.getusersitepackages()] + list(site.getsitepackages())
+    except Exception:
+        return
+    dll_dirs = []
+    for base in bases:
+        nv_dir = os.path.join(base, "nvidia")
+        if not os.path.isdir(nv_dir):
+            continue
+        for pkg in os.listdir(nv_dir):
+            bin_dir = os.path.join(nv_dir, pkg, "bin")
+            if os.path.isdir(bin_dir):
+                dll_dirs.append(bin_dir)
+    if dll_dirs:
+        os.environ["PATH"] = os.pathsep.join(dll_dirs + [os.environ.get("PATH", "")])
+
+
+def _whisper_model_cached(model_name: str) -> bool:
+    """True if the whisper model snapshot (model.bin) is already in the HF cache."""
+    import glob
+    pattern = os.path.expanduser(
+        f"~/.cache/huggingface/hub/models--Systran--faster-whisper-{model_name}/snapshots/*/model.bin"
+    )
+    return bool(glob.glob(pattern))
+
+
 def _segments_from_audio(path: str, chunk: Optional[int], model_name: str = "medium") -> List[SubtitleSegment]:
-    """Transcribe an audio file with faster-whisper for word-level timings."""
+    """Transcribe an audio file with faster-whisper for word-level timings.
+
+    GPU is detected through ctranslate2's own CUDA support (no torch needed).
+    """
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
@@ -93,23 +133,25 @@ def _segments_from_audio(path: str, chunk: Optional[int], model_name: str = "med
             "Install with: pip install faster-whisper"
         ) from exc
 
-    try:
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
-    except ImportError:
-        device = "cpu"
-        compute_type = "int8"
+    import ctranslate2
 
-    model = WhisperModel(
-        model_name,
-        device=device,
-        compute_type=compute_type,
-    )
-    whisper_segments, _ = model.transcribe(path, beam_size=5, word_timestamps=True)
+    _ensure_cuda_dlls_on_path()
+    device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+    if not _whisper_model_cached(model_name):
+        print(f"  model '{model_name}' not cached — downloading from Hugging Face")
+        print("  (if the download stalls, use a mirror: set HF_ENDPOINT, e.g. set HF_ENDPOINT=https://hf-mirror.com)")
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    print(f"  model ready  [device: {device} | compute_type: {compute_type}]")
+
+    segments_gen, info = model.transcribe(path, beam_size=5, word_timestamps=True)
+    duration = float(getattr(info, "duration", 0) or 0)
 
     segments: List[SubtitleSegment] = []
-    for segment in whisper_segments:
+    for segment in segments_gen:
+        if duration > 0:
+            print(f"\r  transcribing: {segment.end:6.1f}s / {duration:.1f}s "
+                  f"({min(100.0, segment.end / duration * 100):4.1f}%)", end="", flush=True)
         if getattr(segment, "words", None):
             for word in segment.words:
                 word_text = word.word.strip()
@@ -129,6 +171,9 @@ def _segments_from_audio(path: str, chunk: Optional[int], model_name: str = "med
                     text=segment.text.strip(),
                 )
             )
+    if duration > 0:
+        print()
+    print(f"  transcription complete: {len(segments)} words")
     return chunk_segments(segments, max_words=chunk)
 
 
