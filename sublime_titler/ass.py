@@ -89,7 +89,7 @@ class SubtitleStyle:
     outline: int = 0                   # 0 → auto-scale
     shadow: int = 0                    # 0 → auto-scale
     bold: bool = True
-    position: str = "bottom"
+    position: str = "middle"
     margin_v: int = 10
     play_res_w: int = 1920
     play_res_h: int = 1080

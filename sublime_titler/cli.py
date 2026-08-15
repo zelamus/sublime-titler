@@ -1,14 +1,19 @@
 """Command-line interface for sublime-titler.
 
 Burn gorgeous karaoke-style subtitles into any video.  Subtitles can come
-from three sources:
+from three explicit sources, or be generated automatically:
 
+* *(nothing)*         — the video's own audio is transcribed with faster-whisper
+  for perfectly timed word-level subtitles (the default — just run
+  ``sublime-titler video.mp4``)
 * ``--subtitle file.srt`` — an existing SRT file (with an optional
   ``*_timings.json`` sidecar for word-by-word highlighting)
 * ``--text file.txt``    — a plain text file; each line is spread evenly over
   the video's duration and given synthetic word timings
-* ``--audio file.wav``   — transcribe an audio file with faster-whisper for
-  perfectly timed word-level subtitles (requires ``faster-whisper``)
+* ``--audio file.wav``   — transcribe an external audio file instead of the
+  video's audio
+
+Whisper transcription requires the optional ``faster-whisper`` dependency.
 """
 
 from __future__ import annotations
@@ -78,21 +83,28 @@ def _segments_from_text(path: str, duration: float, chunk: Optional[int]) -> Lis
     return chunk_segments(segments, max_words=chunk)
 
 
-def _segments_from_audio(path: str, chunk: Optional[int]) -> List[SubtitleSegment]:
+def _segments_from_audio(path: str, chunk: Optional[int], model_name: str = "medium") -> List[SubtitleSegment]:
     """Transcribe an audio file with faster-whisper for word-level timings."""
     try:
         from faster_whisper import WhisperModel
-        import torch  # noqa: F401  (used only to pick the device)
     except ImportError as exc:
         raise RuntimeError(
-            "--audio requires the optional dependency 'faster-whisper' "
-            "(and torch). Install with: pip install faster-whisper torch"
+            "transcription requires the optional dependency 'faster-whisper'. "
+            "Install with: pip install faster-whisper"
         ) from exc
 
+    try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+    except ImportError:
+        device = "cpu"
+        compute_type = "int8"
+
     model = WhisperModel(
-        "medium",
-        device="cuda" if torch.cuda.is_available() else "cpu",
-        compute_type="float16" if torch.cuda.is_available() else "int8",
+        model_name,
+        device=device,
+        compute_type=compute_type,
     )
     whisper_segments, _ = model.transcribe(path, beam_size=5, word_timestamps=True)
 
@@ -120,6 +132,18 @@ def _segments_from_audio(path: str, chunk: Optional[int]) -> List[SubtitleSegmen
     return chunk_segments(segments, max_words=chunk)
 
 
+def _extract_audio(ffmpeg: str, video_path: str, out_wav: str) -> None:
+    """Extract the audio track of a video to a 16 kHz mono WAV (whisper's input)."""
+    import subprocess
+    result = subprocess.run(
+        [ffmpeg, "-y", "-i", video_path, "-vn", "-ac", "1", "-ar", "16000",
+         "-c:a", "pcm_s16le", out_wav],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0 or not os.path.isfile(out_wav):
+        raise RuntimeError(f"could not extract audio from {video_path}: {result.stderr[-500:]}")
+
+
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
@@ -133,10 +157,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="Input video file (any resolution / aspect ratio)")
     p.add_argument("output", nargs="?", help="Output video path (default: <input>_subtitled.mp4)")
 
-    src = p.add_argument_group("subtitle source (pick one)")
+    src = p.add_argument_group("subtitle source (optional)")
     src.add_argument("--subtitle", metavar="SRT", help="SRT file (uses *_timings.json sidecar if present)")
     src.add_argument("--text", metavar="TXT", help="Plain text file; lines spread evenly over the video")
-    src.add_argument("--audio", metavar="WAV", help="Audio file transcribed with faster-whisper (word-level timing)")
+    src.add_argument("--audio", metavar="WAV", help="Transcribe an external audio file instead of the video's own audio")
+    src.add_argument("--whisper-model", default="medium", metavar="NAME",
+                     help="Whisper model for transcription (tiny/base/small/medium/large-v3). "
+                          "First use downloads it from Hugging Face")
     src.add_argument("--duration", type=float, metavar="SEC",
                      help="Override the content duration used by --text (default: input video duration)")
     src.add_argument("--chunk", metavar="N", default="auto",
@@ -151,11 +178,11 @@ def build_parser() -> argparse.ArgumentParser:
     style.add_argument("--back-color", default=None, help="Box/back colour #RRGGBB (default: semi-transparent black)")
     style.add_argument("--outline", type=int, default=0, help="Outline width (0 = auto-scale)")
     style.add_argument("--shadow", type=int, default=0, help="Shadow depth (0 = auto-scale)")
-    style.add_argument("--position", default="bottom", choices=[
+    style.add_argument("--position", default="middle", choices=[
         "bottom", "bottom-left", "bottom-right",
         "middle", "middle-left", "middle-right",
         "top", "top-left", "top-right",
-    ], help="Subtitle position on screen")
+    ], help="Subtitle position on screen (default 'middle' matches the Reddit-story look)")
     style.add_argument("--margin-v", type=int, default=10, help="Vertical margin in ASS units")
     style.add_argument("--no-bold", action="store_true", help="Use the regular (non-bold) font weight")
     style.add_argument("--no-pop", action="store_true", help="Disable the scale pop-in animation")
@@ -189,14 +216,15 @@ def _parse_chunk(value: str) -> Optional[int]:
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
-    sources = [args.subtitle, args.text, args.audio]
-    given = [s for s in sources if s]
-    if len(given) != 1:
-        print("error: provide exactly one of --subtitle, --text, or --audio", file=sys.stderr)
+    explicit = [args.subtitle, args.text, args.audio]
+    given = [s for s in explicit if s]
+    if len(given) > 1:
+        print("error: provide at most one of --subtitle, --text, or --audio", file=sys.stderr)
         return 2
-    if not os.path.isfile(given[0]):
-        print(f"error: subtitle source not found: {given[0]}", file=sys.stderr)
-        return 2
+    for src in given:
+        if not os.path.isfile(src):
+            print(f"error: subtitle source not found: {src}", file=sys.stderr)
+            return 2
     if not os.path.isfile(args.input):
         print(f"error: input video not found: {args.input}", file=sys.stderr)
         return 2
@@ -215,12 +243,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 2. Build subtitle segments
     chunk = _parse_chunk(args.chunk)
     duration = args.duration or info.duration or 30.0
+    temp_wav = None
     if args.subtitle:
         segments = _segments_from_srt(args.subtitle, chunk)
     elif args.text:
         segments = _segments_from_text(args.text, duration, chunk)
     else:
-        segments = _segments_from_audio(args.audio, chunk)
+        # Default: transcribe the video's own audio (or --audio override).
+        audio_source = args.audio or args.input
+        if args.audio is None and not info.has_audio:
+            print("error: the input video has no audio track — provide --text, --subtitle, "
+                  "or --audio with an external audio file", file=sys.stderr)
+            return 1
+        if args.audio is None:
+            temp_wav = os.path.join(tempfile.gettempdir(), f"sublime_titler_audio_{os.getpid()}.wav")
+            print(f"transcribing audio with whisper ({args.whisper_model})…")
+            _extract_audio(ffmpeg, args.input, temp_wav)
+            audio_source = temp_wav
+        else:
+            print(f"transcribing {args.audio} with whisper ({args.whisper_model})…")
+        try:
+            segments = _segments_from_audio(audio_source, chunk, args.whisper_model)
+        finally:
+            if temp_wav and os.path.exists(temp_wav):
+                try:
+                    os.remove(temp_wav)
+                except OSError:
+                    pass
 
     if not segments:
         print("error: no subtitle segments could be produced", file=sys.stderr)

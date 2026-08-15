@@ -25,20 +25,26 @@ viral story-time videos, now a reusable CLI for anything you want to caption.
 
 - **Word-by-word karaoke highlighting** — the active word flashes in a bright
   color and scales to 115% as it's spoken, then settles back to white.
+- **Automatic transcription** — drop in any video; faster-whisper transcribes
+  its own audio for perfectly timed word-level subtitles. No arguments needed:
+  `sublime-titler video.mp4` just works.
+- **Reddit-story defaults** — the styling matches the viral story-video look
+  out of the box: Nunito SemiBold at 90 px (auto-scaled), white on black
+  outline, center position, karaoke highlight, pop-in animation.
 - **Adaptive line chunking** — short words pair up, long words get a line to
   themselves, so every subtitle stays short, punchy, and readable.
 - **Pop-in animation** — every line pops onto the screen with a snappy scale-in.
 - **Works on any video** — portrait, landscape, square, any resolution. The
   style auto-scales to the video's height (no more hardcoded 1080×1920).
-- **Three input modes**:
+- **Alternate input modes**:
   - `--subtitle file.srt` — existing SRT files (JSON sidecar = karaoke timing)
   - `--text script.txt` — plain text, spread evenly over the video
-  - `--audio narration.wav` — whisper transcription for perfectly timed words
+  - `--audio narration.wav` — transcribe an external audio file instead
 - **Fully styleable** — font, size, colors, highlight color, position,
   outline, shadow, margins, bold, animations. All optional with sensible defaults.
 - **Story-video intro** — `--title-duration` + `--title-words` reproduce the
   "subtitles stay hidden while the title is read, then fade in" effect.
-- **Zero heavy dependencies** — pure Python stdlib + ffmpeg (libass).
+- **Lightweight** — pure Python stdlib + ffmpeg (libass). Whisper is optional.
 
 ---
 
@@ -55,6 +61,13 @@ pip install .            # installs the `sublime-titler` command
 python main.py --help
 ```
 
+Whisper transcription (the default subtitle source) needs one optional
+dependency:
+
+```bash
+pip install .[whisper]   # or: pip install faster-whisper
+```
+
 The tool bundles **Nunito SemiBold** (SIL OFL 1.1) — the font used for the
 viral story-video look — so it works out of the box. Use `--font` for any
 other `.ttf`/`.otf`.
@@ -64,14 +77,21 @@ other `.ttf`/`.otf`.
 ## 🚀 Usage
 
 ```bash
+# The one-command happy path: whisper transcribes the video's own audio,
+# times every word, and burns karaoke subtitles in the Reddit-story style.
+sublime-titler video.mp4
+
 # Plain text script → subtitles spread over the video
 sublime-titler video.mp4 --text script.txt
 
 # Existing SRT file
 sublime-titler video.mp4 --subtitle captions.srt
 
-# Transcribe narration audio for perfect word timing (needs faster-whisper)
+# Transcribe an external audio file instead of the video's audio
 sublime-titler video.mp4 --audio narration.wav
+
+# Use a faster/smaller whisper model (first use downloads it from Hugging Face)
+sublime-titler video.mp4 --whisper-model base
 
 # Full story-video intro: hide subs while the title is read, fade the last word in
 sublime-titler video.mp4 --text script.txt \
@@ -81,7 +101,7 @@ sublime-titler video.mp4 --text script.txt \
 Output defaults to `<input>_subtitled.mp4`, or pass a second positional arg:
 
 ```bash
-sublime-titler input.mp4 output.mp4 --text script.txt
+sublime-titler input.mp4 output.mp4
 ```
 
 ### 🎨 Styling
@@ -108,15 +128,16 @@ sublime-titler video.mp4 --text script.txt \
 | `--outline-color` | `#000000` | Outline color |
 | `--back-color` | translucent black | Box/back color |
 | `--outline` / `--shadow` | auto | Outline width / shadow depth |
-| `--position` | `bottom` | `bottom`, `middle`, `top`, and corner variants |
+| `--position` | `middle` | `bottom`, `middle`, `top`, and corner variants (middle = Reddit-story look) |
 | `--margin-v` | `10` | Vertical margin |
 | `--no-bold` / `--no-pop` / `--no-karaoke` | — | Disable bold, pop animation, highlighting |
 | `--chunk` | `auto` | Words per line: `auto` (adaptive 1–2), `0` (keep as-is), or fixed `N` |
 
-### 🔧 Encoding
+### 🔧 Encoding & transcription
 
 | Flag | Description |
 |---|---|
+| `--whisper-model NAME` | Whisper model for transcription: `tiny`/`base`/`small`/`medium`/`large-v3` (default `medium`; first use downloads it) |
 | `--ffmpeg PATH` | Path to ffmpeg (auto-detected otherwise) |
 | `--video-codec NAME` | Override encoder (`libx264`, `av1_nvenc`, …) — defaults to `av1_nvenc` when available |
 | `--keep-ass` | Keep the intermediate `.ass` file next to the output |
@@ -127,29 +148,35 @@ sublime-titler video.mp4 --text script.txt \
 ## 🧠 How it works
 
 ```
-input video ──ffprobe──► resolution (auto-scales styling)
-                          │
-script.txt ─┐             ▼
-captions.srt ┼─► segments ─► adaptive chunking ─► karaoke word timing
-narration.wav┘   (whisper)                        │
-                                                  ▼
-                                        ASS generator (libass styling)
-                                                  │
-                                          ffmpeg subtitles= filter
-                                                  │
-                                                  ▼
-                                           subtitled output.mp4
+                ┌──────────┐   no --text/--subtitle/--audio?
+input video ────┤  ffprobe ├──► YES ──► extract audio ──► whisper transcription
+                └──────────┘                                   │
+                  resolution                                    ▼
+                  (auto-scales styling)                  word-level segments
+                                                               │
+script.txt ─┐                                                  │
+captions.srt ┼─► segments ───────────────────► adaptive chunking ─► karaoke timing
+narration.wav┘                                                   │
+                                                                 ▼
+                                                       ASS generator (libass styling)
+                                                                 │
+                                                         ffmpeg subtitles= filter
+                                                                 │
+                                                                 ▼
+                                                          subtitled output.mp4
 ```
 
 The subtitle engine was extracted from a Reddit-story video generator and
 generalized: the adaptive 1–2 word chunking, the word-flash highlight
 (`\t`-animated inline overrides), the pop-in scale, and the title fade-in are
-all preserved verbatim. What's new:
+all preserved verbatim, and the default styling matches the original config
+(Nunito 90 px, center position, 9/3 outline/shadow). What's new:
 
 - **Any resolution** — `PlayResX/PlayResY` come from the input video, and font
   size / outline / shadow scale with it.
 - **Any position** — alignment is a flag instead of hardcoded center.
-- **Any source** — SRT, plain text, or raw audio instead of only TTS audio.
+- **Any source** — the video's own audio (whisper), an SRT, plain text, or an
+  external audio file.
 - **Whisper is optional** — karaoke timing works from text and SRT too.
 
 ---
@@ -157,7 +184,10 @@ all preserved verbatim. What's new:
 ## 🎬 Example
 
 ```bash
-# 1. Write a script
+# The whole pipeline in one command: transcribe → time → style → burn
+sublime-titler my_clip.mp4
+
+# 1. Write a script (if you don't want whisper)
 cat > script.txt <<'EOF'
 This tool was born inside a Reddit story generator.
 Every word gets its own highlight as it is spoken.

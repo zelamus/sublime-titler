@@ -79,15 +79,13 @@ def _run(cmd: List[str]) -> subprocess.CompletedProcess:
 
 
 def probe_video(ffprobe: Optional[str], video_path: str) -> VideoInfo:
-    """Read width/height/duration/audio from a video via ffprobe."""
+    """Read width/height/duration and audio presence from a video via ffprobe."""
     if not ffprobe:
         raise RuntimeError("ffprobe not found — required to read the input video's resolution.")
 
     result = _run([
         ffprobe, "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,duration",
-        "-show_entries", "stream=codec_type",
+        "-show_entries", "stream=codec_type,width,height,duration",
         "-of", "json",
         video_path,
     ])
@@ -99,7 +97,10 @@ def probe_video(ffprobe: Optional[str], video_path: str) -> VideoInfo:
     if not streams:
         raise RuntimeError(f"no video stream found in {video_path}")
 
-    video_stream = streams[0]
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    if not video_stream:
+        raise RuntimeError(f"no video stream found in {video_path}")
+
     width = int(video_stream.get("width", 0))
     height = int(video_stream.get("height", 0))
     duration = None
@@ -108,11 +109,7 @@ def probe_video(ffprobe: Optional[str], video_path: str) -> VideoInfo:
     except (TypeError, ValueError):
         pass
 
-    has_audio = False
-    for s in streams:
-        if s.get("codec_type") == "audio":
-            has_audio = True
-            break
+    has_audio = any(s.get("codec_type") == "audio" for s in streams)
 
     return VideoInfo(width=width, height=height, duration=duration, has_audio=has_audio)
 
