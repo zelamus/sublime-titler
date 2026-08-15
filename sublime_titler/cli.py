@@ -36,7 +36,6 @@ from .render import (
     burn_subtitles,
     default_font,
     find_ffmpeg,
-    pick_video_codec,
     probe_video,
 )
 
@@ -348,18 +347,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     # 4. Burn in
-    codec_args = None
-    if args.video_codec:
-        codec_args = ["-c:v", args.video_codec]
-    else:
-        codec_args, chosen = pick_video_codec(ffmpeg)
-        if args.verbose:
-            print(f"encoder: {chosen}")
+    codec_args = ["-c:v", args.video_codec] if args.video_codec else None
 
     print(f"rendering: {output}  (ffmpeg: {ffmpeg})")
     if args.verbose:
         print(f"  ass: {ass_path}")
-    burn_subtitles(ffmpeg, args.input, ass_path, output, font_path=font_path, codec_args=codec_args)
+    burn_subtitles(
+        ffmpeg, args.input, ass_path, output,
+        font_path=font_path, codec_args=codec_args, verbose=args.verbose,
+    )
 
     if not args.keep_ass:
         try:

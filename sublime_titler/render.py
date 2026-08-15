@@ -148,6 +148,7 @@ def burn_subtitles(
     font_path: Optional[str] = None,
     codec_args: Optional[List[str]] = None,
     extra_args: Optional[List[str]] = None,
+    verbose: bool = False,
 ) -> str:
     """Burn an ASS subtitle file into a video with ffmpeg.
 
@@ -161,10 +162,12 @@ def burn_subtitles(
         font_dir = os.path.dirname(os.path.abspath(font_path))
         filter_subs += f":fontsdir={_escape_filter_path(font_dir)}"
 
-    # Pick the encoder if the caller did not.
+    # Explicit --video-codec requests fail loudly; only auto-picked encoders retry.
     auto_picked = codec_args is None
     if auto_picked:
-        codec_args, _ = pick_video_codec(ffmpeg)
+        codec_args, chosen = pick_video_codec(ffmpeg)
+        if verbose:
+            print(f"encoder: {chosen}")
 
     def _cmd(encoder: List[str]) -> List[str]:
         cmd: List[str] = [ffmpeg, "-y", "-i", input_video, "-vf", filter_subs]
