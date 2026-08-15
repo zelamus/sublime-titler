@@ -1,0 +1,15 @@
+This tool was born inside a Reddit-story video generator.
+
+Every word gets its own highlight as it is spoken.
+
+The active word flashes yellow and scales up to one hundred fifteen percent.
+
+Short words are paired up. Longer words get a line all to themselves.
+
+You can feed it an SRT file, a plain text script, or a raw audio file.
+
+Whisper handles the word-level timing automatically.
+
+The style is fully configurable. Font size, colors, position, outline, shadow.
+
+Burn subtitles into any video you want. Vertical. Horizontal. Anything.

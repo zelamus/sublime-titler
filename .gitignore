@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# ffmpeg binaries (drop your own build in ffmpeg/)
+ffmpeg/
+
+# Outputs and temp files
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.ass
+*.srt
+*_timings.json
+temp_video_files/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environments
+.env
